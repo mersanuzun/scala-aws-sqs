@@ -80,6 +80,29 @@ object SqsClient {
     })
   }
 
+  def getSizeOfQueue(queueName: String): Future[Option[Int]] = {
+    runWithQueueName(queueName, (url: String) => {
+      val response = asScalaFuture[GetQueueAttributesRequest, GetQueueAttributesResult]{h =>
+        awsClient.getQueueAttributesAsync(
+          new GetQueueAttributesRequest(url, util.Arrays.asList("ApproximateNumberOfMessages")), h)
+      }
+      response.map((attributesResult: GetQueueAttributesResult) => {
+        if (attributesResult == null) None
+        else {
+          val attributes: util.Map[String, String] = attributesResult.getAttributes
+          val sizeOfMessages: String = attributes.get("ApproximateNumberOfMessages")
+          if (sizeOfMessages == null) None
+          else Some(sizeOfMessages.toInt)
+        }
+      })(ec).recover{
+        case NonFatal(e) => {
+          println(e)
+          None
+        }
+      }(ec)
+    })
+  }
+
   private def getQueueUrls(): Unit = {
     /*val response: Future[ListQueuesResult] = asScalaFuture[ListQueuesRequest, ListQueuesResult]{ h =>
       awsClient.listQueuesAsync(new ListQueuesRequest(), h)
