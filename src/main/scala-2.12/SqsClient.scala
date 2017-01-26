@@ -15,7 +15,7 @@ object SqsClient {
   private val accessKey: String = AwsConfig.getOptionString("aws.sqs.access-key").getOrElse("x")
   private val secretKey: String = AwsConfig.getOptionString("aws.sqs.secret-key").getOrElse("x")
   private val defaultEndPoint: String = AwsConfig.getOptionString("aws.sqs.end-point").getOrElse("http://localhost:9324")
-  private val defaultQueueName: String = AwsConfig.getOptionString("aws.sqs.queue-name").getOrElse("mersanuzun") // fixed
+  private val defaultQueueName: String = AwsConfig.getOptionString("aws.sqs.queue-name").getOrElse("mersanuzun")
   private val awsClient: AmazonSQSAsyncClient = new AmazonSQSAsyncClient(new BasicAWSCredentials(accessKey, secretKey))
   awsClient.setEndpoint(defaultEndPoint)
   private var queueNamesAndUrls: MMap[String, String] = MMap.empty[String, String]
@@ -24,28 +24,24 @@ object SqsClient {
 
   def sendMessage(queueName: String, messageBody: String): Future[Option[String]] = {
     runWithQueueName(queueName, (url: String) => {
-      val response = asScalaFuture[SendMessageRequest, SendMessageResult]{ h =>
+      val response: Future[SendMessageResult] = asScalaFuture[SendMessageRequest, SendMessageResult]{ h =>
         awsClient.sendMessageAsync(new SendMessageRequest(url, messageBody), h)
       }
-      response.map(r => {
+      handleResponse(response, (r: SendMessageResult) => {
         if (r == null) None
         else{
           Some(r.getMessageId)
         }
-      })(ec).recover{
-        case NonFatal(e) =>
-          println(e.getMessage)
-          None
-      }(ec)
+      })
     })
   }
 
   def getMessage(queueName: String): Future[Option[SqsMessage]] = {
     runWithQueueName(queueName, (url: String) => {
-      val response = asScalaFuture[ReceiveMessageRequest, ReceiveMessageResult]{ h =>
+      val response: Future[ReceiveMessageResult] = asScalaFuture[ReceiveMessageRequest, ReceiveMessageResult]{ h =>
         awsClient.receiveMessageAsync(url, h)
       }
-      response.map(r => {
+      handleResponse(response, (r: ReceiveMessageResult) => {
         if (r == null) None
         else {
           val messages = r.getMessages
@@ -55,38 +51,28 @@ object SqsClient {
             Some(new SqsMessage(message.getMessageId, message.getBody, message.getReceiptHandle))
           }
         }
-      })(ec).recover{
-        case NonFatal(e) => {
-          println(e.getMessage)
-          None
-        }
-      }(ec)
+      })
     })
   }
 
   def deleteMessage(queueName: String, receiptHandle: String): Future[Option[String]] = {
     runWithQueueName(queueName, (url: String) => {
-      val response = asScalaFuture[DeleteMessageRequest, DeleteMessageResult]{ h =>
+      val response: Future[DeleteMessageResult] = asScalaFuture[DeleteMessageRequest, DeleteMessageResult]{ h =>
         awsClient.deleteMessageAsync(new DeleteMessageRequest(url, receiptHandle), h)
       }
-      response.map(_ => {
+      handleResponse(response, (r: DeleteMessageResult) => {
         Some(receiptHandle)
-      })(ec).recover{
-        case NonFatal(e) => {
-          println(e)
-          None
-        }
-      }(ec)
+      })
     })
   }
 
   def getSizeOfQueue(queueName: String): Future[Option[Int]] = {
     runWithQueueName(queueName, (url: String) => {
-      val response = asScalaFuture[GetQueueAttributesRequest, GetQueueAttributesResult]{h =>
+      val response: Future[GetQueueAttributesResult] = asScalaFuture[GetQueueAttributesRequest, GetQueueAttributesResult]{ h =>
         awsClient.getQueueAttributesAsync(
           new GetQueueAttributesRequest(url, util.Arrays.asList("ApproximateNumberOfMessages")), h)
       }
-      response.map((attributesResult: GetQueueAttributesResult) => {
+      handleResponse(response, (attributesResult: GetQueueAttributesResult) => {
         if (attributesResult == null) None
         else {
           val attributes: util.Map[String, String] = attributesResult.getAttributes
@@ -94,19 +80,21 @@ object SqsClient {
           if (sizeOfMessages == null) None
           else Some(sizeOfMessages.toInt)
         }
-      })(ec).recover{
+      })
+    })
+  }
+
+  private def handleResponse[T, R](response: Future[T], responseFunction: T => Option[R]): Future[Option[R]] = {
+    response.map(responseFunction)(ec)
+      .recover{
         case NonFatal(e) => {
           println(e)
           None
         }
       }(ec)
-    })
   }
 
   private def getQueueUrls(): Unit = {
-    /*val response: Future[ListQueuesResult] = asScalaFuture[ListQueuesRequest, ListQueuesResult]{ h =>
-      awsClient.listQueuesAsync(new ListQueuesRequest(), h)
-    }*/
     val listQueuesResult = awsClient.listQueues()
     val urls: util.List[String] = listQueuesResult.getQueueUrls
     if (urls.isEmpty) throw new QueueListEmpty("Queue list is empty.")
@@ -143,14 +131,6 @@ object SqsClient {
     }
     p.future
   }
-
-  /*
- private def toScalaFuture[T](javaFuture: java.util.concurrent.Future[T]): Future[T] = {
-   Future {
-     javaFuture.get()
-   }(ec)
- }
- */
 
 }
 

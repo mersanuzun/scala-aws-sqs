@@ -8,7 +8,7 @@ object DemoAWSSQS {
     val queueName = "mersanuzun"
     val ec = ExecutionContext.Implicits.global
     //SqsClient.sendMessage(queueName, "Hello, it's Mehmet Ersan Uzun").foreach(println)(ec)
-    //SqsClient.getMessage(queueName).foreach(a => SqsClient.deleteMessage(queueName, a.get.receiptHandle).foreach(println)(ec))(ec)
+    SqsClient.getMessage(queueName).foreach(a => SqsClient.deleteMessage(queueName, a.get.receiptHandle).foreach(println)(ec))(ec)
     SqsClient.getSizeOfQueue(queueName).foreach(println)(ec)
     println("bitti")
   }
