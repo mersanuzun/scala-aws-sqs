@@ -19,7 +19,7 @@ object SqsClient {
   private val queueNamesAndUrls: MMap[String, String] = MMap.empty[String, String]
   private val ec: ExecutionContext = ExecutionContext.Implicits.global
 
-  def init(): Unit ={
+  def init(): Unit = {
     accessKey
     secretKey
     defaultEndPoint
@@ -30,35 +30,34 @@ object SqsClient {
   }
 
   def sendMessage(queueName: String, messageBody: String): Future[Option[String]] = {
-    withQueueName(queueName){ (url: String) => {
-      try{
-        val response: Future[SendMessageResult] = asScalaFuture[SendMessageRequest, SendMessageResult]{ h =>
+    try {
+      withQueueUrl(queueName) { (url: String) => {
+        val response: Future[SendMessageResult] = asScalaFuture[SendMessageRequest, SendMessageResult] { h =>
           awsClient.sendMessageAsync(new SendMessageRequest(url, messageBody), h)
         }
         response.map((sendMessageResult: SendMessageResult) => {
           if (sendMessageResult == null) None
-          else{
+          else {
             Some(sendMessageResult.getMessageId)
           }
-        })(ec).recover{
-          case NonFatal(e) => {
+        })(ec).recover {
+          case NonFatal(e) =>
             L.errorE("An error occurred while processing SendMessageResult which come from " + queueName + ".", e)
             None
-          }
         }(ec)
-      }catch {
-        case NonFatal(e) => {
-          L.errorE("An error occurred while sending message that contains '" + messageBody + "' to " + queueName + ".", e)
-          Future.successful(None)
-        }
       }
+      }
+    } catch {
+      case NonFatal(e) => {
+        L.errorE("An error occurred while sending message that contains '" + messageBody + "' to " + queueName + ".", e)
+        Future.successful(None)
       }
     }
   }
 
   def getMessage(queueName: String): Future[Option[SqsMessage]] = {
-    withQueueName(queueName)((url: String) => {
-      try{
+    try {
+      withQueueUrl(queueName)((url: String) => {
         val response: Future[ReceiveMessageResult] = asScalaFuture[ReceiveMessageRequest, ReceiveMessageResult] { h =>
           awsClient.receiveMessageAsync(url, h)
         }
@@ -67,20 +66,20 @@ object SqsClient {
           if (messages.isEmpty) None
           else {
             val message = messages.get(0)
-            Some(new SqsMessage(message.getMessageId, message.getBody, message.getReceiptHandle))
+            Some(SqsMessage(message.getMessageId, message.getBody, message.getReceiptHandle))
           }
-        })(ec).recover{
+        })(ec).recover {
           case NonFatal(e) => {
             L.errorE("An error occured while processing ReceiveMessageResult which come from " + queueName + " queue.", e)
             None
           }
         }(ec)
-      }catch {
-        case NonFatal(e) =>
-          L.errorE("An error occurred while sending ReceiveMessageRequest to " + queueName + " queue.", e)
-          Future.successful(None)
-      }
-    })
+      })
+    } catch {
+      case NonFatal(e) =>
+        L.errorE("An error occurred while sending ReceiveMessageRequest to " + queueName + " queue.", e)
+        Future.successful(None)
+    }
   }
 
   def deleteMessage(queueName: String, message: SqsMessage): Future[Option[Boolean]] = {
@@ -88,31 +87,29 @@ object SqsClient {
   }
 
   def deleteMessage(queueName: String, receiptHandle: String): Future[Option[Boolean]] = {
-    withQueueName(queueName)((url: String) => {
-      try{
+    try {
+      withQueueUrl(queueName)((url: String) => {
         val response: Future[DeleteMessageResult] = asScalaFuture[DeleteMessageRequest, DeleteMessageResult] { h =>
           awsClient.deleteMessageAsync(new DeleteMessageRequest(url, receiptHandle), h)
         }
         response.map((_: DeleteMessageResult) => {
           Some(true)
-        })(ec).recover{
-          case NonFatal(e) => {
+        })(ec).recover {
+          case NonFatal(e) =>
             L.errorE("An error occurred while processing DeleteMessageResult which come from " + queueName + " queue.", e)
             None
-          }
         }(ec)
-      }catch {
-        case NonFatal(e) => {
-          L.errorE("An error occurred while sending DeleteMessageRequest to " + queueName + " queue.", e)
-          Future.successful(None)
-        }
-      }
-    })
+      })
+    } catch {
+      case NonFatal(e) =>
+        L.errorE("An error occurred while sending DeleteMessageRequest to " + queueName + " queue.", e)
+        Future.successful(None)
+    }
   }
 
   def getSizeOfQueue(queueName: String): Future[Option[Int]] = {
-    withQueueName(queueName)((url: String) => {
-      try{
+    try {
+      withQueueUrl(queueName)((url: String) => {
         val response: Future[GetQueueAttributesResult] = asScalaFuture[GetQueueAttributesRequest, GetQueueAttributesResult] { h =>
           awsClient.getQueueAttributesAsync(
             new GetQueueAttributesRequest(url, util.Arrays.asList("ApproximateNumberOfMessages")), h)
@@ -120,40 +117,50 @@ object SqsClient {
         response.map((attributesResult: GetQueueAttributesResult) => {
           val attributes: util.Map[String, String] = attributesResult.getAttributes
           val sizeOfMessages: String = attributes.get("ApproximateNumberOfMessages")
-          if (sizeOfMessages == null) None
-          else Some(sizeOfMessages.toInt)
-        })(ec).recover{
+          if (sizeOfMessages == null) {
+            None
+          }else{
+            Some(sizeOfMessages.toInt)
+          }
+        })(ec).recover {
           case NonFatal(e) => {
             L.errorE("An error occurred while processing GetAttibutesResult which come from " + queueName + " queue.", e)
             None
           }
         }(ec)
-      }catch {
-        case NonFatal(e) => {
-          L.errorE("An error occured while sending GetQueueAttributesRequest to " + queueName + " queue.", e)
-          Future.successful(None)
-        }
-      }
-    })
+      })
+    } catch {
+      case NonFatal(e) =>
+        L.errorE("An error occurred while sending GetQueueAttributesRequest to " + queueName + " queue.", e)
+        Future.successful(None)
+    }
   }
 
   private def getQueueUrls(): Unit = {
     queuesNames.foreach((queueName: String) => {
-      val listQueuesResult: GetQueueUrlResult = awsClient.getQueueUrl(queueName)
-      val url: String = listQueuesResult.getQueueUrl()
-      if (url != null){
-        queueNamesAndUrls += (queueName -> url)
+      try {
+        val listQueuesResult: GetQueueUrlResult = awsClient.getQueueUrl(queueName)
+        val url: String = listQueuesResult.getQueueUrl()
+        if (url != null) {
+          queueNamesAndUrls += (queueName -> url)
+        }
+      } catch {
+        case e: QueueDoesNotExistException =>
+          L.errorE(queueName + " could not found in aws", e)
+        case NonFatal(e) =>
+          L.errorE("An error occurred while sending getQueueUrl request.", e)
       }
     })
-    if (queueNamesAndUrls.isEmpty) throw new QueueListCannotFetched("Queue list cannot be fetched from AWS.")
+    if (queueNamesAndUrls.isEmpty){
+      throw new QueueListCannotFetched("Queue list could not be fetched from aws.")
+    }
   }
 
-  private def withQueueName[B](queueName: String)(f: String => Future[Option[B]]): Future[Option[B]] = {
+  private def withQueueUrl[B](queueName: String)(f: String => Future[Option[B]]): Future[Option[B]] = {
     queueNamesAndUrls.get(queueName) match {
       case Some(url) => f(url)
-      case None =>
-        L.error(queueName + " could not be found in " + queueNamesAndUrls)
-        Future.successful(None)
+      case None => throw new QueueNameCouldNotFound(queueName + " could not be found in "
+        + queueNamesAndUrls.mkString(",") + " queue list.")
     }
   }
 
@@ -174,4 +181,7 @@ object SqsClient {
 }
 
 class QueueListCannotFetched(m: String) extends RuntimeException(m)
+
 class QueueListEmpty(m: String) extends RuntimeException(m)
+
+class QueueNameCouldNotFound(m: String) extends RuntimeException(m)

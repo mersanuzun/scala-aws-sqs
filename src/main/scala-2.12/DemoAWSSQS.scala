@@ -9,6 +9,8 @@ object DemoAWSSQS {
   def main(args: Array[String]): Unit = {
     val queueName = "mersanuzun"
     val ec = ExecutionContext.Implicits.global
+    L.info("Selam")
+    L.error("Hİ")
     System.setProperty("conf-file", "conf/application.conf")
     SqsClient.init()
     SqsClient.sendMessage(queueName, "Hello, it's Mehmet Ersan Uzun").foreach(println)(ec)

@@ -1,7 +1,6 @@
 import java.io.File
 import scala.collection.JavaConverters._
 import com.typesafe.config.{Config, ConfigFactory}
-
 import scala.util.control.NonFatal
 
 /**
@@ -19,7 +18,9 @@ object Config{
     try{
       Some(getString(path))
     }catch {
-      case NonFatal(_) => None
+      case NonFatal(e) =>
+        L.errorE(path + " could not found.", e)
+        None
     }
   }
 
@@ -32,7 +33,9 @@ object Config{
     try{
       Some(getStringList(path))
     }catch {
-      case NonFatal(e) => None
+      case NonFatal(e) =>
+        L.errorE(path + " could not found.", e)
+        None
     }
   }
 }
